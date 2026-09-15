@@ -1,0 +1,3 @@
+/* Loads Tailwind. All styling is done with Tailwind classes in the components;
+   the font and page colors are set on <body> in app/layout.tsx. */
+@import "tailwindcss";
