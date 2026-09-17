@@ -10,14 +10,31 @@
 //   4. Every missed word is coached in turn: fetch a hint from /api/coach,
 //      say it out loud, wait for the voice to finish, then move to the next one.
 //
+// BETWEEN stories: we score each page, and when a story ends the child either
+// moves up a level, stays, or quietly drops to easier stories
+// (see lib/difficulty.ts), then a celebration screen introduces the next story.
+//
 // "use client" at the top means this component runs in the browser, which we
 // need for buttons, state, the microphone and the voice.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { story } from "@/data/story";
+import { stories, FIRST_STORY, type ReadingLevel, type Story } from "@/data/stories";
 import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
-import { matchWords, readingProgress, type WordStatus } from "@/lib/matchWords";
+import {
+  matchWords,
+  readingAccuracy,
+  readingProgress,
+  type WordStatus,
+} from "@/lib/matchWords";
+import {
+  decideLevelChange,
+  nextLevel,
+  pickNextStory,
+  PAGES_TO_JUDGE,
+  type LevelChange,
+} from "@/lib/difficulty";
 import { speak, stopSpeaking } from "@/lib/speak";
+import CelebrationScreen, { CELEBRATION_MESSAGES } from "@/components/CelebrationScreen";
 import type { CoachRequest, CoachResponse } from "@/app/api/coach/route";
 
 // --- Tuning knobs. All the "how long do we wait" numbers live here. ---
@@ -41,6 +58,11 @@ const MAX_LISTENING_MS = 45000;
 // A breath between one spoken hint and the next.
 const PAUSE_BETWEEN_HINTS_MS = 900;
 
+// Diagnostic panel: shows per-page accuracy, the saved scores and the level
+// decision on screen, and logs the Next/Finish path to the console.
+// Off for recording. Flip to true to bring it back.
+const SHOW_DEBUG = false;
+
 // Tailwind classes for each word status in the colored sentence.
 // Missed words also get a wavy underline, so they stand out without relying on color alone.
 const WORD_STYLES: Record<WordStatus, string> = {
@@ -49,9 +71,29 @@ const WORD_STYLES: Record<WordStatus, string> = {
   missed: "text-red-600 underline decoration-wavy decoration-red-400 underline-offset-8",
 };
 
+// What the celebration screen between stories needs to know.
+type Celebration = {
+  change: LevelChange;
+  level: ReadingLevel;
+  nextStory: Story;
+};
+
 export default function Home() {
-  // Which story page we're on (0 = first page).
+  // The story being read, and which of its pages we're on (0 = first page).
+  const [story, setStory] = useState<Story>(FIRST_STORY);
   const [pageIndex, setPageIndex] = useState(0);
+
+  // The child's current difficulty level, and the stories they've already had.
+  const [level, setLevel] = useState<ReadingLevel>(FIRST_STORY.level);
+  const [readStoryIds, setReadStoryIds] = useState<string[]>([]);
+
+  // How well each page of THIS story went, keyed by page number (0 to 1).
+  // Keyed rather than a plain list so going Back and forward again can't count
+  // the same page twice.
+  const [pageScores, setPageScores] = useState<Record<number, number>>({});
+
+  // Set while the between-stories screen is showing; null during reading.
+  const [celebration, setCelebration] = useState<Celebration | null>(null);
 
   // The hint being shown, and whether we're waiting for one.
   const [hint, setHint] = useState<string | null>(null);
@@ -80,14 +122,41 @@ export default function Home() {
   // matchWords is cheap, so we just recompute it on every render; no state needed.
   const wordResults = !isListening && transcript ? matchWords(pageText, transcript) : null;
 
+  // The score for the page on screen, graded from whatever has been heard so
+  // far. Unlike wordResults this does NOT wait for the microphone to go quiet,
+  // because scoring and displaying have different needs: the colored sentence
+  // must wait (so unread words don't flash red), but the score must not (the
+  // child may well press Next before the silence timer has fired).
+  const pageAccuracy = transcript ? readingAccuracy(matchWords(pageText, transcript)) : null;
+
   // Every word they missed, in the order they appear in the sentence.
   const missedWords = wordResults ? wordResults.filter((result) => result.status === "missed") : [];
+
+  // Does this page have anything to work on? Everything hint-related hangs off
+  // this, so a page read perfectly shows no hint, no buttons and no leftovers
+  // from an earlier attempt - there is simply nothing there to go stale.
+  const hasMissedWords = missedWords.length > 0;
 
   // The one we're coaching right now. Once coachIndex runs past the end of the
   // list, this is null and the coaching stops.
   const currentTarget = missedWords[coachIndex] ?? null;
   const targetWord = currentTarget?.word ?? null;
   const targetHeard = currentTarget?.heard ?? null;
+
+  // --- TEMPORARY debug values. Recomputed each render, nothing is stored. ---
+  // Scores already saved, and the same list with the page on screen included -
+  // which is exactly what finishStory would judge if you pressed Finish now.
+  const debugSaved = scoresInOrder(pageScores);
+  const debugWithThisPage = scoresInOrder(recordPageScore());
+  const debugDecision = decideLevelChange(debugWithThisPage);
+
+  // The words flagged on screen RIGHT NOW, exactly as the sentence renders them.
+  // Kept in a ref so the coaching effect can re-check it at the moment it is
+  // about to speak - by which time the grading may have changed underneath it.
+  const missedWordsRef = useRef<string[]>([]);
+  useEffect(() => {
+    missedWordsRef.current = missedWords.map((result) => result.word);
+  });
 
   // Timer that moves on to the next missed word after a hint finishes playing.
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,6 +238,19 @@ export default function Home() {
       heardInstead: targetHeard,
     }).then((hintText) => {
       if (cancelled || !hintText) return;
+
+      // THE SAFETY CHECK. The grading can change while the hint is being
+      // fetched: the recognizer often delivers the end of a sentence a moment
+      // after we started grading, which re-grades words we thought were missed.
+      // Without this, a hint requested for a word that was missing from a
+      // half-finished transcript would still be spoken after that word had
+      // turned green - the child hearing "sound out can" about a word they read
+      // perfectly. Only ever speak about a word still flagged on screen.
+      if (!missedWordsRef.current.includes(targetWord)) {
+        setHint(null);
+        return;
+      }
+
       speak(hintText, () => {
         advanceTimerRef.current = setTimeout(
           () => setCoachIndex((index) => index + 1),
@@ -213,6 +295,97 @@ export default function Home() {
     setPageIndex(newIndex);
   }
 
+  // Score the page they just read. Returns the updated scores so the caller can
+  // use them straight away (React state updates aren't visible until the next render).
+  // Every page the child moves on from is scored here, which is the one place
+  // a page can be left: handleNext uses it for both Next and Finish.
+  //
+  // It grades whatever was heard even if the microphone is still on. That is
+  // the fix for the bug where nothing was ever scored: this used to require
+  // wordResults, which stays null until the mic goes quiet, so pressing Next
+  // inside the 3-second silence window - the natural thing to do the moment a
+  // child finishes a sentence - silently threw the whole page away.
+  function recordPageScore(): Record<number, number> {
+    if (pageAccuracy === null) return pageScores; // they never said anything here
+    return { ...pageScores, [pageIndex]: pageAccuracy };
+  }
+
+  // Page scores in page order, which is the order lib/difficulty.ts expects.
+  function scoresInOrder(scores: Record<number, number>): number[] {
+    return Object.keys(scores)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map((index) => scores[index]);
+  }
+
+  // The Next button: on the last page it finishes the story instead.
+  function handleNext() {
+    const updatedScores = recordPageScore();
+    setPageScores(updatedScores);
+
+    if (SHOW_DEBUG) {
+      console.log("[debug] Next/Finish pressed", {
+        pageIndex,
+        isLastPage,
+        scoredThisPage: wordResults !== null,
+      });
+    }
+
+    if (isLastPage) {
+      finishStory(updatedScores);
+    } else {
+      goToPage(pageIndex + 1);
+    }
+  }
+
+  // End of a story: work out the next level, pick the next story, and show the
+  // celebration screen.
+  function finishStory(finalScores: Record<number, number>) {
+    const change = decideLevelChange(scoresInOrder(finalScores));
+    const newLevel = nextLevel(level, change);
+
+    // At level 3 there's nowhere higher to go, so show the neutral
+    // "Great reading!" instead of promising harder stories we can't hand out.
+    // A "down" capped at level 1 still shows its own kind message: that one
+    // never mentions levels, so there's nothing misleading about it.
+    const shownChange: LevelChange = change === "up" && newLevel === level ? "same" : change;
+
+    if (SHOW_DEBUG) {
+      console.log("[debug] finishStory", {
+        scores: scoresInOrder(finalScores),
+        change,
+        levelChange: `${level} -> ${newLevel}`,
+        shownChange,
+      });
+    }
+
+    const idsRead = [...readStoryIds, story.id];
+
+    stopCoaching();
+    resetSpeech();
+    setReadStoryIds(idsRead);
+    setLevel(newLevel);
+    setCelebration({
+      change: shownChange,
+      level: newLevel,
+      nextStory: pickNextStory(stories, newLevel, idsRead),
+    });
+
+    speak(CELEBRATION_MESSAGES[shownChange].spoken);
+  }
+
+  // Leaving the celebration screen: start the next story from page 1 with a
+  // clean slate of scores.
+  function startNextStory() {
+    if (!celebration) return;
+    stopCoaching();
+    resetSpeech();
+    setStory(celebration.nextStory);
+    setPageIndex(0);
+    setPageScores({});
+    setCelebration(null);
+  }
+
   // Starting a new attempt: stop talking (otherwise the mic hears the coach)
   // and clear the old hints.
   function startReading() {
@@ -223,6 +396,11 @@ export default function Home() {
   // The manual backup button. It takes over from the queue, so the hint it
   // fetches is spoken without automatically advancing to the next word.
   function getHintNow() {
+    // Belt and braces: the button is hidden when there is nothing to coach, so
+    // this should be unreachable, but never ask for a correction to a sentence
+    // the child read perfectly.
+    if (!hasMissedWords) return;
+
     clearAdvanceTimer();
     requestHint({
       pageText,
@@ -234,6 +412,18 @@ export default function Home() {
     });
   }
 
+  // Between stories we show the celebration screen instead of the reading page.
+  if (celebration) {
+    return (
+      <CelebrationScreen
+        change={celebration.change}
+        level={celebration.level}
+        nextStoryTitle={celebration.nextStory.title}
+        onStart={startNextStory}
+      />
+    );
+  }
+
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-10 px-6 py-12">
       {/* Title */}
@@ -242,7 +432,50 @@ export default function Home() {
           Reading Coach
         </p>
         <h1 className="mt-2 text-3xl font-bold">{story.title}</h1>
+        <p className="mt-2 text-lg text-slate-500">Level {level}</p>
       </header>
+
+      {/* ---------------------- DIAGNOSTIC PANEL ----------------------
+          Hidden unless SHOW_DEBUG is on. Shows how the page was scored, what
+          is saved, and the level decision - handy if the levelling ever looks
+          wrong again. */}
+      {SHOW_DEBUG && (
+        <section className="rounded-2xl bg-slate-900 p-5 font-mono text-sm leading-6 text-slate-100">
+          <p className="mb-2 font-bold text-amber-300">DEBUG - temporary</p>
+          <p>
+            story {story.id} (a level {story.level} story) &middot; child is on level {level}
+          </p>
+          <p>
+            page {pageIndex + 1} of {story.pages.length} &middot; isLastPage={String(isLastPage)}{" "}
+            &middot; button says &quot;{isLastPage ? "Finish ✓" : "Next →"}&quot;
+          </p>
+          <p>
+            this page, graded live:{" "}
+            {pageAccuracy === null
+              ? "nothing heard yet - read the page"
+              : `${Math.round(pageAccuracy * 100)}%`}
+            {pageScores[pageIndex] !== undefined
+              ? " (saved)"
+              : pageAccuracy !== null
+                ? " (saves when you press Next/Finish)"
+                : ""}
+          </p>
+          <p>saved so far: [{debugSaved.map((s) => Math.round(s * 100) + "%").join(", ")}]</p>
+          <p>
+            scores this story: [
+            {debugWithThisPage.map((s) => Math.round(s * 100) + "%").join(", ")}]
+          </p>
+          <p className="font-bold text-amber-300">
+            decision if you pressed Finish now: {debugDecision.toUpperCase()}
+            {debugWithThisPage.length < PAGES_TO_JUDGE &&
+              ` (only ${debugWithThisPage.length} page(s) scored; needs ${PAGES_TO_JUDGE})`}
+          </p>
+          <p>
+            coaching: missed={missedWords.length} &middot; coachIndex={coachIndex} &middot; target=
+            {targetWord ?? "none"} &middot; listening={String(isListening)}
+          </p>
+        </section>
+      )}
 
       {/* The story page */}
       <section className="rounded-3xl bg-white px-8 py-16 text-center shadow-sm">
@@ -286,11 +519,10 @@ export default function Home() {
           ← Back
         </button>
         <button
-          onClick={() => goToPage(pageIndex + 1)}
-          disabled={isLastPage}
-          className="rounded-2xl border-2 border-slate-300 bg-white px-8 py-4 text-xl font-bold disabled:opacity-40"
+          onClick={handleNext}
+          className="rounded-2xl border-2 border-slate-300 bg-white px-8 py-4 text-xl font-bold"
         >
-          Next →
+          {isLastPage ? "Finish ✓" : "Next →"}
         </button>
       </nav>
 
@@ -334,38 +566,45 @@ export default function Home() {
       </section>
 
       {/* Hints from the coach. They play automatically, one missed word at a
-          time; these buttons are the manual backup. */}
-      <section className="flex flex-col items-center gap-5">
-        <div className="flex flex-wrap justify-center gap-4">
-          <button
-            onClick={getHintNow}
-            disabled={isLoadingHint}
-            className="rounded-full bg-amber-300 px-8 py-4 text-xl font-bold text-amber-950 disabled:opacity-60"
-          >
-            {isLoadingHint ? "Thinking…" : "💡 Get hint"}
-          </button>
+          time; these buttons are the manual backup.
+
+          The whole section only exists while the page has a word to work on.
+          That is what keeps a hint from an earlier attempt sitting under an
+          all-green sentence: when the last red word goes, so does the hint,
+          the "Hear it again" button and the "Get hint" button with it. */}
+      {hasMissedWords && (
+        <section className="flex flex-col items-center gap-5">
+          <div className="flex flex-wrap justify-center gap-4">
+            <button
+              onClick={getHintNow}
+              disabled={isLoadingHint}
+              className="rounded-full bg-amber-300 px-8 py-4 text-xl font-bold text-amber-950 disabled:opacity-60"
+            >
+              {isLoadingHint ? "Thinking…" : "💡 Get hint"}
+            </button>
+
+            {hint && (
+              <button
+                onClick={() => speak(hint)}
+                className="rounded-full border-2 border-amber-300 px-8 py-4 text-xl font-bold text-amber-950"
+              >
+                🔊 Hear it again
+              </button>
+            )}
+          </div>
 
           {hint && (
-            <button
-              onClick={() => speak(hint)}
-              className="rounded-full border-2 border-amber-300 px-8 py-4 text-xl font-bold text-amber-950"
-            >
-              🔊 Hear it again
-            </button>
+            <div className="w-full rounded-2xl bg-amber-50 p-6 text-center">
+              {missedWords.length > 1 && (
+                <p className="mb-2 text-lg text-amber-800">
+                  Word {Math.min(coachIndex + 1, missedWords.length)} of {missedWords.length}
+                </p>
+              )}
+              <p className="text-2xl text-amber-950">{hint}</p>
+            </div>
           )}
-        </div>
-
-        {hint && (
-          <div className="w-full rounded-2xl bg-amber-50 p-6 text-center">
-            {missedWords.length > 1 && (
-              <p className="mb-2 text-lg text-amber-800">
-                Word {Math.min(coachIndex + 1, missedWords.length)} of {missedWords.length}
-              </p>
-            )}
-            <p className="text-2xl text-amber-950">{hint}</p>
-          </div>
-        )}
-      </section>
+        </section>
+      )}
     </main>
   );
 }

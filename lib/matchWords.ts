@@ -33,6 +33,19 @@ const PAIR_COST: Record<WordStatus, number> = {
 };
 const GAP_COST = 1; // an expected word nobody said, or an extra spoken word
 
+// --- How forgiving "close" is. ---
+//
+// How many letters may differ before two words stop counting as sounding alike.
+// Longer words get more slack: one letter wrong out of nine is far more likely
+// to be the recognizer mishearing than a child misreading.
+//
+// Short words allow NOTHING. They are where real reading mistakes live
+// ("hat"/"had", "big"/"bag"), so forgiving a single letter there means the child
+// is never coached on exactly the words they are getting wrong.
+const EXACT_MATCH_MAX_LENGTH = 3; // 3 letters or fewer: must match exactly
+const ONE_EDIT_MAX_LENGTH = 4; // 4 letters: one letter may differ
+const MAX_ALLOWED_EDITS = 2; // longer than that: at most two letters
+
 export function matchWords(expectedText: string, transcript: string): WordResult[] {
   // Keep the original expected words for display, plus a normalized copy for
   // comparing. (Tokens that are only punctuation, like "-", are dropped.)
@@ -90,6 +103,15 @@ export function matchWords(expectedText: string, transcript: string): WordResult
   return results;
 }
 
+// How much of the page the child read well, as 0 to 1.
+// "correct" and "close" both count as good; only "missed" counts against them.
+// This is the score the adaptive difficulty (lib/difficulty.ts) runs on.
+export function readingAccuracy(results: WordResult[]): number {
+  if (results.length === 0) return 1;
+  const good = results.filter((result) => result.status !== "missed").length;
+  return good / results.length;
+}
+
 // How far through the sentence the child has got, as 0 to 1.
 //
 // It looks at the LAST word we managed to match, not how many matched, so a
@@ -137,12 +159,37 @@ function soundsAlike(a: string, b: string): boolean {
   // sound; real reading mistakes often change it (cat -> hat).
   if (x[0] !== y[0]) return false;
 
-  // Longer words may differ by more letters. Very short words must match
-  // exactly, otherwise "is" and "it" would count as close.
-  const longer = Math.max(x.length, y.length);
-  const allowedEdits = longer <= 2 ? 0 : longer <= 4 ? 1 : 2;
+  // A long vowel and a short vowel are different sounds, so a word with one
+  // never sounds like a word with the other. Checked on the original spelling,
+  // because simplifySpelling deliberately strips the silent e and would
+  // otherwise make "hop" and "hope" identical - scoring a clear misread as a
+  // near miss and leaving it uncoached.
+  if (hasLongVowel(a) !== hasLongVowel(b)) return false;
 
-  return editDistance(x, y) <= allowedEdits;
+  const longer = Math.max(x.length, y.length);
+  return editDistance(x, y) <= allowedEditsFor(longer);
+}
+
+// The slack allowed for a word of this length. See the constants above.
+function allowedEditsFor(length: number): number {
+  if (length <= EXACT_MATCH_MAX_LENGTH) return 0;
+  if (length <= ONE_EDIT_MAX_LENGTH) return 1;
+  return MAX_ALLOWED_EDITS;
+}
+
+// Does this word's vowel run long? Either an "igh" cluster ("night", "right")
+// or a silent "e" on the end ("hope", "kite", "tape").
+//
+// It deliberately spots BOTH spellings of a long vowel, so the homophones this
+// file is built to forgive still line up: "right" (igh) and "write" (silent e)
+// are both long, so they still match. What it separates is long from short -
+// "hop" from "hope", "tap" from "tape" - which is a real difference in sound
+// and exactly the mistake worth coaching.
+//
+// The length check keeps short words like "the" and "he" out of it.
+function hasLongVowel(word: string): boolean {
+  if (word.includes("igh")) return true;
+  return word.length > 3 && /[^aeiou]e$/.test(word);
 }
 
 // A few English spelling rules that turn letters into rough sounds, so words
