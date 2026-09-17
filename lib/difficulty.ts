@@ -46,15 +46,38 @@ export function nextLevel(current: ReadingLevel, change: LevelChange): ReadingLe
   return current;
 }
 
-// Choose the next story at the given level, preferring one they haven't had yet.
+// Choose the next story at the given level.
+//
+// `justFinishedId` is the story that has only this moment ended. It is passed
+// separately because "never hand the same story straight back" has to hold even
+// once the child has read everything at this level.
 export function pickNextStory(
   allStories: Story[],
   level: ReadingLevel,
   alreadyReadIds: string[],
+  justFinishedId?: string,
 ): Story {
   const atThisLevel = allStories.filter((story) => story.level === level);
   if (atThisLevel.length === 0) return allStories[0]; // no stories at that level yet
 
-  // If they've read them all, start the level again from the top.
-  return atThisLevel.find((story) => !alreadyReadIds.includes(story.id)) ?? atThisLevel[0];
+  // 1. Best case: one they have not read yet this session.
+  const unread = atThisLevel.filter(
+    (story) => !alreadyReadIds.includes(story.id) && story.id !== justFinishedId,
+  );
+  if (unread.length > 0) return unread[0];
+
+  // 2. They have read them all, so go round again - but move ON from the story
+  //    that just ended instead of handing it back.
+  //
+  //    This is what used to break. The old fallback was a fixed atThisLevel[0],
+  //    which knew nothing about the story just finished, so once a level was
+  //    exhausted it served that same first story every time - including
+  //    immediately after the child had just read it.
+  const justFinishedIndex = atThisLevel.findIndex((story) => story.id === justFinishedId);
+  if (justFinishedIndex !== -1) {
+    return atThisLevel[(justFinishedIndex + 1) % atThisLevel.length];
+  }
+
+  // 3. They have arrived from another level, so any story here is fresh.
+  return atThisLevel[0];
 }

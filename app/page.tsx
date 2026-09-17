@@ -34,7 +34,10 @@ import {
   type LevelChange,
 } from "@/lib/difficulty";
 import { speak, stopSpeaking } from "@/lib/speak";
-import CelebrationScreen, { CELEBRATION_MESSAGES } from "@/components/CelebrationScreen";
+import CelebrationScreen, {
+  pickCelebrationMessage,
+  type CelebrationMessage,
+} from "@/components/CelebrationScreen";
 import type { CoachRequest, CoachResponse } from "@/app/api/coach/route";
 
 // --- Tuning knobs. All the "how long do we wait" numbers live here. ---
@@ -76,6 +79,9 @@ type Celebration = {
   change: LevelChange;
   level: ReadingLevel;
   nextStory: Story;
+  // Picked once when the story ends, then reused. If the screen and the voice
+  // each picked their own, they would say different things.
+  message: CelebrationMessage;
 };
 
 export default function Home() {
@@ -361,6 +367,9 @@ export default function Home() {
 
     const idsRead = [...readStoryIds, story.id];
 
+    // One phrasing, chosen here, used by both the screen and the voice.
+    const message = pickCelebrationMessage(shownChange);
+
     stopCoaching();
     resetSpeech();
     setReadStoryIds(idsRead);
@@ -368,10 +377,12 @@ export default function Home() {
     setCelebration({
       change: shownChange,
       level: newLevel,
-      nextStory: pickNextStory(stories, newLevel, idsRead),
+      // story.id is passed so the story just finished is never handed back.
+      nextStory: pickNextStory(stories, newLevel, idsRead, story.id),
+      message,
     });
 
-    speak(CELEBRATION_MESSAGES[shownChange].spoken);
+    speak(message.spoken);
   }
 
   // Leaving the celebration screen: start the next story from page 1 with a
@@ -416,6 +427,7 @@ export default function Home() {
   if (celebration) {
     return (
       <CelebrationScreen
+        message={celebration.message}
         change={celebration.change}
         level={celebration.level}
         nextStoryTitle={celebration.nextStory.title}
@@ -504,7 +516,7 @@ export default function Home() {
           <p className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-lg">
             <span className="text-green-700">● Read it!</span>
             <span className="text-amber-600">● Close enough</span>
-            <span className="text-red-600">● Let&apos;s try again</span>
+            <span className="text-red-600">● Let&apos;s practice this one</span>
           </p>
         )}
       </section>
@@ -546,9 +558,11 @@ export default function Home() {
 
         {isListening && (
           <p className="text-center text-lg text-teal-700">
-            Listening… read the sentence out loud!
+            I&apos;m listening… read it out loud!
             <br />
-            <span className="text-base text-slate-500">I&apos;ll stop when you&apos;re done.</span>
+            <span className="text-base text-slate-500">
+              Take your time. I&apos;ll stop when you&apos;re done.
+            </span>
           </p>
         )}
 
@@ -559,7 +573,9 @@ export default function Home() {
           <p className="text-base font-bold text-slate-500">What I heard:</p>
           <p className="mt-2 min-h-10 text-2xl">
             {transcript || (
-              <span className="text-slate-400">Press Start Reading and read the page.</span>
+              <span className="text-slate-400">
+                Press Start Reading, then read the page out loud.
+              </span>
             )}
           </p>
         </div>
