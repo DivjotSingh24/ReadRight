@@ -1,3 +1,245 @@
-/* Loads Tailwind. All styling is done with Tailwind classes in the components;
-   the font and page colors are set on <body> in app/layout.tsx. */
+/* ===========================================================================
+   Reading Coach - visual design system
+   ---------------------------------------------------------------------------
+   The feel we are after: a warm, sunny picture book. Cream paper, soft shapes,
+   big friendly buttons, lots of air. Not a dashboard.
+
+   Every colour is a token defined once here, in a light ("day") and a dark
+   ("night") set. Components never hard-code a colour, so the two themes can
+   never drift apart and a tweak here changes the whole app.
+
+   THE ONE RULE that outranks prettiness: the sentence the child is reading is
+   the focal point, and the green / amber / red word feedback must stay easy to
+   tell apart in BOTH themes. The feedback colours below were picked for
+   contrast against their own theme's paper, not for looks alone, and each
+   status also carries a non-colour cue (underline style) so it does not rely
+   on colour vision.
+   =========================================================================== */
+
 @import "tailwindcss";
+
+:root {
+  color-scheme: light;
+
+  /* Paper and ink */
+  --paper: #fff6ea; /* warm cream page */
+  --paper-glow: #ffe6cc; /* soft wash behind the page */
+  --surface: #ffffff; /* cards */
+  --surface-soft: #fff3e3; /* inset panels */
+  --line: #f2ddc4; /* hairline borders */
+  --ink: #42342b; /* body text - warm dark brown, not black */
+  --ink-soft: #806a59; /* labels, captions - 4.8:1 on cream */
+
+  /* Actions. Teal deliberately: it is the one friendly colour that cannot be
+     confused with the green / amber / red of the word feedback. */
+  --primary: #0d7d72;
+  --primary-hover: #0a6159;
+  --primary-ink: #ffffff;
+  --primary-wash: #d8f0ec;
+
+  /* Playful accents */
+  --sunshine: #f6a63c;
+  --berry: #d2568c;
+
+  /* Word feedback. Contrast measured against --surface. */
+  --ok: #1f7a3f; /* read it          5.4:1 */
+  --ok-wash: #ddf2e3;
+  --close: #a35a07; /* close enough     5.2:1 */
+  --close-wash: #fdeed3;
+  --miss: #c23a30; /* let's practice   5.3:1 */
+  --miss-wash: #fde3df;
+
+  --stop: #cc4242; /* the Stop button - 4.8:1 behind white text */
+
+  --shadow-soft: 0 10px 30px -14px rgba(122, 82, 45, 0.45);
+  --shadow-lift: 0 18px 40px -18px rgba(122, 82, 45, 0.5);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Warm charcoal, never pure black - black under a big block of text is
+     harsh, and this app is nothing but big blocks of text. */
+  --paper: #241e1b;
+  --paper-glow: #332a25;
+  --surface: #2f2825;
+  --surface-soft: #3a312c;
+  --line: #4b403a;
+  --ink: #f7ede2;
+  --ink-soft: #c2b0a1;
+
+  --primary: #4ccfbd;
+  --primary-hover: #6ee1d1;
+  --primary-ink: #0d302c;
+  --primary-wash: #14403b;
+
+  --sunshine: #f8c069;
+  --berry: #f08bb4;
+
+  /* Lightened so they sit brightly on the dark paper. Contrast vs --surface. */
+  --ok: #82dda0; /* 8.8:1 */
+  --ok-wash: #1d3c2a;
+  --close: #f4c66d; /* 9.1:1 */
+  --close-wash: #3e3118;
+  --miss: #ff9d91; /* 7.2:1 */
+  --miss-wash: #452520;
+
+  --stop: #f07a72;
+
+  --shadow-soft: 0 10px 30px -14px rgba(0, 0, 0, 0.7);
+  --shadow-lift: 0 18px 40px -18px rgba(0, 0, 0, 0.75);
+}
+
+body {
+  background:
+    radial-gradient(1100px 620px at 50% -10%, var(--paper-glow) 0%, transparent 70%),
+    var(--paper);
+  color: var(--ink);
+  min-height: 100svh;
+}
+
+/* --- Cards and panels ---------------------------------------------------- */
+
+.rc-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 2rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.rc-panel {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 1.5rem;
+}
+
+/* --- Buttons ------------------------------------------------------------- */
+/* Chunky, rounded and physical: they dip when pressed, which small children
+   read as "it worked" far more reliably than a colour change. */
+
+.rc-btn {
+  border-radius: 999px;
+  font-weight: 700;
+  transition:
+    transform 0.12s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.rc-btn:active:not(:disabled) {
+  transform: translateY(2px);
+}
+.rc-btn:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.rc-btn-primary {
+  background: var(--primary);
+  color: var(--primary-ink);
+  box-shadow: var(--shadow-lift);
+}
+.rc-btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.rc-btn-stop {
+  background: var(--stop);
+  color: #fff;
+  box-shadow: var(--shadow-lift);
+}
+
+.rc-btn-quiet {
+  background: var(--surface);
+  color: var(--ink);
+  border: 2px solid var(--line);
+}
+.rc-btn-quiet:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.rc-btn-quiet:disabled {
+  opacity: 0.4;
+}
+
+.rc-btn-hint {
+  background: var(--close-wash);
+  color: var(--close);
+  border: 2px solid var(--close);
+}
+.rc-btn-hint:disabled {
+  opacity: 0.6;
+}
+
+/* --- Word feedback ------------------------------------------------------- */
+/* Colour PLUS an underline style, so the three states are still tellable
+   apart without colour vision. */
+
+.rc-word-correct {
+  color: var(--ok);
+}
+.rc-word-close {
+  color: var(--close);
+  text-decoration: underline dotted var(--close);
+  text-underline-offset: 0.35em;
+}
+.rc-word-missed {
+  color: var(--miss);
+  text-decoration: underline wavy var(--miss);
+  text-underline-offset: 0.35em;
+}
+
+/* --- Bits and pieces ----------------------------------------------------- */
+
+.rc-pill {
+  background: var(--primary-wash);
+  color: var(--primary);
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.rc-theme-toggle {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-soft);
+  transition:
+    transform 0.12s ease,
+    border-color 0.15s ease;
+}
+.rc-theme-toggle:hover {
+  border-color: var(--primary);
+  transform: rotate(-8deg) scale(1.06);
+}
+.rc-theme-toggle:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
+}
+
+/* Which icon shows is pure CSS, driven by the data-theme attribute. No React
+   state, so there is no flash of the wrong icon before hydration. */
+.rc-icon-sun {
+  display: none;
+}
+[data-theme="dark"] .rc-icon-sun {
+  display: inline;
+}
+[data-theme="dark"] .rc-icon-moon {
+  display: none;
+}
+
+/* The celebration screen's confetti dots. Decorative only. */
+.rc-confetti {
+  position: absolute;
+  border-radius: 999px;
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-btn,
+  .rc-theme-toggle {
+    transition: none;
+  }
+  .animate-bounce {
+    animation: none !important;
+  }
+}

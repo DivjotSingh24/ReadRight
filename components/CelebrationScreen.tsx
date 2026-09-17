@@ -144,6 +144,17 @@ type Props = {
   onStart: () => void;
 };
 
+// A few confetti dots, scattered by hand rather than at random so the layout is
+// the same every time and nothing lands on the words. Purely decorative.
+const CONFETTI = [
+  { top: "8%", left: "8%", size: 16, color: "var(--sunshine)" },
+  { top: "16%", left: "88%", size: 12, color: "var(--berry)" },
+  { top: "34%", left: "4%", size: 10, color: "var(--primary)" },
+  { top: "70%", left: "92%", size: 14, color: "var(--sunshine)" },
+  { top: "84%", left: "12%", size: 11, color: "var(--berry)" },
+  { top: "56%", left: "95%", size: 9, color: "var(--primary)" },
+];
+
 export default function CelebrationScreen({
   message,
   change,
@@ -151,31 +162,76 @@ export default function CelebrationScreen({
   nextStoryTitle,
   onStart,
 }: Props) {
+  // Only a level up gets the full party. The other two are warm and calm - a
+  // child who found the story hard does not need fireworks.
+  const isLevelUp = change === "up";
+
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-10 px-6 py-12">
-      <section className="rounded-3xl bg-white px-8 py-16 text-center shadow-sm">
-        {/* The star bounces on a level up, to make the moment feel bigger. */}
-        <p className={`text-7xl ${change === "up" ? "animate-bounce" : ""}`}>{message.emoji}</p>
+    <main className="mx-auto flex min-h-svh max-w-3xl flex-col justify-center px-4 py-10 sm:px-6">
+      <section className="rc-card relative overflow-hidden px-6 py-14 text-center sm:px-12 sm:py-20">
+        {/* A soft wash of colour behind the whole card. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background: isLevelUp
+              ? "radial-gradient(520px 320px at 50% 0%, var(--primary-wash) 0%, transparent 72%)"
+              : "radial-gradient(520px 320px at 50% 0%, var(--surface-soft) 0%, transparent 72%)",
+          }}
+        />
 
-        <h1 className="mt-6 text-4xl font-bold sm:text-5xl">{message.title}</h1>
-        <p className="mt-4 text-2xl text-slate-600">{message.line}</p>
+        {isLevelUp &&
+          CONFETTI.map((dot, i) => (
+            <span
+              key={i}
+              aria-hidden="true"
+              className="rc-confetti"
+              style={{
+                top: dot.top,
+                left: dot.left,
+                width: dot.size,
+                height: dot.size,
+                background: dot.color,
+              }}
+            />
+          ))}
 
-        {/* Only a level UP names the level. Going down stays quiet about it. */}
-        {change === "up" && (
-          <p className="mt-8 inline-block rounded-full bg-teal-100 px-8 py-3 text-2xl font-bold text-teal-800">
-            Level {level}
+        <div className="relative">
+          {/* The star bounces on a level up, to make the moment feel bigger. */}
+          <p className={`text-7xl sm:text-8xl ${isLevelUp ? "animate-bounce" : ""}`}>
+            {message.emoji}
           </p>
-        )}
 
-        <p className="mt-10 text-xl text-slate-500">Next story</p>
-        <p className="mt-1 text-2xl font-bold">{nextStoryTitle}</p>
+          <h1 className="mt-8 text-3xl leading-tight font-bold sm:text-5xl">{message.title}</h1>
+          <p
+            className="mx-auto mt-5 max-w-xl text-xl leading-relaxed sm:text-2xl"
+            style={{ color: "var(--ink-soft)" }}
+          >
+            {message.line}
+          </p>
 
-        <button
-          onClick={onStart}
-          className="mt-8 rounded-full bg-teal-600 px-10 py-5 text-2xl font-bold text-white"
-        >
-          ▶ Start reading
-        </button>
+          {/* Only a level UP names the level. Going down stays quiet about it. */}
+          {isLevelUp && (
+            <p className="rc-pill mt-9 inline-block px-9 py-3 text-2xl">Level {level}</p>
+          )}
+
+          <div className="mt-12">
+            <p
+              className="text-sm font-bold tracking-[0.2em] uppercase"
+              style={{ color: "var(--ink-soft)" }}
+            >
+              Next story
+            </p>
+            <p className="mt-2 text-2xl font-bold sm:text-3xl">{nextStoryTitle}</p>
+          </div>
+
+          <button
+            onClick={onStart}
+            className="rc-btn rc-btn-primary mt-10 px-12 py-5 text-2xl"
+          >
+            &#9654; Start reading
+          </button>
+        </div>
       </section>
     </main>
   );

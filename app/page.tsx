@@ -34,6 +34,7 @@ import {
   type LevelChange,
 } from "@/lib/difficulty";
 import { speak, stopSpeaking } from "@/lib/speak";
+import ThemeToggle from "@/components/ThemeToggle";
 import CelebrationScreen, {
   pickCelebrationMessage,
   type CelebrationMessage,
@@ -69,9 +70,9 @@ const SHOW_DEBUG = false;
 // Tailwind classes for each word status in the colored sentence.
 // Missed words also get a wavy underline, so they stand out without relying on color alone.
 const WORD_STYLES: Record<WordStatus, string> = {
-  correct: "text-green-700",
-  close: "text-amber-600",
-  missed: "text-red-600 underline decoration-wavy decoration-red-400 underline-offset-8",
+  correct: "rc-word-correct",
+  close: "rc-word-close",
+  missed: "rc-word-missed",
 };
 
 // What the celebration screen between stories needs to know.
@@ -437,14 +438,21 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-10 px-6 py-12">
-      {/* Title */}
-      <header className="text-center">
-        <p className="text-lg font-bold uppercase tracking-widest text-teal-700">
+    <main className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:gap-10 sm:px-6 sm:py-12">
+      {/* Title. The theme switch sits in the corner, out of the reading path. */}
+      <header className="relative text-center">
+        <div className="absolute top-0 right-0">
+          <ThemeToggle />
+        </div>
+
+        <p
+          className="text-sm font-bold tracking-[0.2em] uppercase sm:text-base"
+          style={{ color: "var(--primary)" }}
+        >
           Reading Coach
         </p>
-        <h1 className="mt-2 text-3xl font-bold">{story.title}</h1>
-        <p className="mt-2 text-lg text-slate-500">Level {level}</p>
+        <h1 className="mt-3 text-3xl font-bold sm:text-4xl">{story.title}</h1>
+        <p className="rc-pill mt-3 inline-block px-5 py-1.5 text-base sm:text-lg">Level {level}</p>
       </header>
 
       {/* ---------------------- DIAGNOSTIC PANEL ----------------------
@@ -490,11 +498,11 @@ export default function Home() {
       )}
 
       {/* The story page */}
-      <section className="rounded-3xl bg-white px-8 py-16 text-center shadow-sm">
-        <p className="mb-6 text-lg text-slate-500">
+      <section className="rc-card px-6 py-12 text-center sm:px-10 sm:py-16">
+        <p className="mb-8 text-base tracking-wide" style={{ color: "var(--ink-soft)" }}>
           Page {pageIndex + 1} of {story.pages.length}
         </p>
-        <p className="text-4xl leading-relaxed font-bold sm:text-5xl sm:leading-relaxed">
+        <p className="text-[2rem] leading-[1.45] font-bold sm:text-5xl sm:leading-[1.4]">
           {wordResults
             ? // After reading: each word colored by how it went.
               wordResults.map((result, i) => (
@@ -513,10 +521,10 @@ export default function Home() {
         </p>
 
         {wordResults && (
-          <p className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-lg">
-            <span className="text-green-700">● Read it!</span>
-            <span className="text-amber-600">● Close enough</span>
-            <span className="text-red-600">● Let&apos;s practice this one</span>
+          <p className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-base sm:text-lg">
+            <span style={{ color: "var(--ok)" }}>● Read it!</span>
+            <span style={{ color: "var(--close)" }}>● Close enough</span>
+            <span style={{ color: "var(--miss)" }}>● Let&apos;s practice this one</span>
           </p>
         )}
       </section>
@@ -526,13 +534,13 @@ export default function Home() {
         <button
           onClick={() => goToPage(pageIndex - 1)}
           disabled={isFirstPage}
-          className="rounded-2xl border-2 border-slate-300 bg-white px-8 py-4 text-xl font-bold disabled:opacity-40"
+          className="rc-btn rc-btn-quiet px-7 py-4 text-lg sm:px-8 sm:text-xl"
         >
           ← Back
         </button>
         <button
           onClick={handleNext}
-          className="rounded-2xl border-2 border-slate-300 bg-white px-8 py-4 text-xl font-bold"
+          className="rc-btn rc-btn-quiet px-7 py-4 text-lg sm:px-8 sm:text-xl"
         >
           {isLastPage ? "Finish ✓" : "Next →"}
         </button>
@@ -543,37 +551,46 @@ export default function Home() {
         {isListening ? (
           <button
             onClick={stopListening}
-            className="rounded-full bg-rose-500 px-10 py-5 text-2xl font-bold text-white"
+            className="rc-btn rc-btn-stop px-12 py-5 text-2xl"
           >
             ■ Stop
           </button>
         ) : (
           <button
             onClick={startReading}
-            className="rounded-full bg-teal-600 px-10 py-5 text-2xl font-bold text-white"
+            className="rc-btn rc-btn-primary px-12 py-5 text-2xl"
           >
             🎤 Start Reading
           </button>
         )}
 
         {isListening && (
-          <p className="text-center text-lg text-teal-700">
+          <p className="text-center text-lg" style={{ color: "var(--primary)" }}>
             I&apos;m listening… read it out loud!
             <br />
-            <span className="text-base text-slate-500">
+            <span className="text-base" style={{ color: "var(--ink-soft)" }}>
               Take your time. I&apos;ll stop when you&apos;re done.
             </span>
           </p>
         )}
 
-        {speechError && <p className="text-lg text-rose-600">{speechError}</p>}
+        {speechError && (
+          <p className="text-lg" style={{ color: "var(--miss)" }}>
+            {speechError}
+          </p>
+        )}
 
         {/* Live transcript */}
-        <div className="w-full rounded-2xl bg-white p-6 shadow-sm">
-          <p className="text-base font-bold text-slate-500">What I heard:</p>
-          <p className="mt-2 min-h-10 text-2xl">
+        <div className="rc-panel w-full p-6">
+          <p
+            className="text-sm font-bold tracking-wider uppercase"
+            style={{ color: "var(--ink-soft)" }}
+          >
+            What I heard
+          </p>
+          <p className="mt-3 min-h-10 text-xl sm:text-2xl">
             {transcript || (
-              <span className="text-slate-400">
+              <span style={{ color: "var(--ink-soft)", opacity: 0.75 }}>
                 Press Start Reading, then read the page out loud.
               </span>
             )}
@@ -594,7 +611,7 @@ export default function Home() {
             <button
               onClick={getHintNow}
               disabled={isLoadingHint}
-              className="rounded-full bg-amber-300 px-8 py-4 text-xl font-bold text-amber-950 disabled:opacity-60"
+              className="rc-btn rc-btn-hint px-8 py-4 text-xl"
             >
               {isLoadingHint ? "Thinking…" : "💡 Get hint"}
             </button>
@@ -602,7 +619,7 @@ export default function Home() {
             {hint && (
               <button
                 onClick={() => speak(hint)}
-                className="rounded-full border-2 border-amber-300 px-8 py-4 text-xl font-bold text-amber-950"
+                className="rc-btn rc-btn-quiet px-8 py-4 text-xl"
               >
                 🔊 Hear it again
               </button>
@@ -610,17 +627,34 @@ export default function Home() {
           </div>
 
           {hint && (
-            <div className="w-full rounded-2xl bg-amber-50 p-6 text-center">
+            <div
+              className="w-full rounded-3xl p-6 text-center"
+              style={{ background: "var(--close-wash)" }}
+            >
               {missedWords.length > 1 && (
-                <p className="mb-2 text-lg text-amber-800">
+                <p className="mb-2 text-base font-bold" style={{ color: "var(--close)" }}>
                   Word {Math.min(coachIndex + 1, missedWords.length)} of {missedWords.length}
                 </p>
               )}
-              <p className="text-2xl text-amber-950">{hint}</p>
+              <p className="text-xl leading-relaxed sm:text-2xl">{hint}</p>
             </div>
           )}
         </section>
       )}
+
+      {/* Credit. Small and quiet: it must never compete with the story. */}
+      <footer className="mt-4 text-center text-sm" style={{ color: "var(--ink-soft)" }}>
+        Made by{" "}
+        <a
+          href="https://github.com/DivjotSingh24/ReadRight"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-bold underline decoration-dotted underline-offset-4 hover:no-underline"
+          style={{ color: "var(--primary)" }}
+        >
+          Divjot Singh Gulati
+        </a>
+      </footer>
     </main>
   );
 }

@@ -20,10 +20,18 @@ export const metadata: Metadata = {
 // LayoutProps is a type Next.js generates for us; it describes `children`.
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en">
-      <body className={`${andika.className} min-h-screen bg-stone-50 text-slate-800 antialiased`}>
-        {children}
-      </body>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Applies the saved theme before the first paint, so returning to the
+            app in night mode never flashes a bright white screen first. Falls
+            back to whatever the device prefers. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var s=localStorage.getItem("reading-coach-theme");document.documentElement.dataset.theme=(s==="dark"||s==="light")?s:(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");}catch(e){document.documentElement.dataset.theme="light";}})();`,
+          }}
+        />
+      </head>
+      <body className={`${andika.className} antialiased`}>{children}</body>
     </html>
   );
 }
