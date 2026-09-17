@@ -90,6 +90,24 @@ export function matchWords(expectedText: string, transcript: string): WordResult
   return results;
 }
 
+// How far through the sentence the child has got, as 0 to 1.
+//
+// It looks at the LAST word we managed to match, not how many matched, so a
+// word they got wrong in the middle doesn't make it look like they never
+// finished. Used to decide whether a silence means "done reading" or just
+// "thinking about the next word".
+export function readingProgress(expectedText: string, transcript: string): number {
+  const results = matchWords(expectedText, transcript);
+  if (results.length === 0) return 1;
+
+  let lastMatched = -1;
+  results.forEach((result, index) => {
+    if (result.status !== "missed") lastMatched = index;
+  });
+
+  return (lastMatched + 1) / results.length;
+}
+
 // Lowercase and remove everything that isn't a letter or digit.
 // "Kite!" -> "kite", "Don't" -> "dont"
 function normalize(word: string): string {

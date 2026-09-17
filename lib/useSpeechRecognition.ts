@@ -14,7 +14,7 @@
 // does Safari. Firefox does not. Chrome sends the audio to Google's servers to
 // turn it into text, so it needs an internet connection.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // --- Minimal TypeScript types for the Web Speech API ---
 // TypeScript doesn't ship types for speech recognition, so we describe just
@@ -68,7 +68,10 @@ export function useSpeechRecognition() {
     return () => recognitionRef.current?.abort();
   }, []);
 
-  function startListening() {
+  // These three are wrapped in useCallback so they keep the same identity
+  // between renders. The page uses them inside timers, which would otherwise
+  // be torn down and restarted on every render.
+  const startListening = useCallback(() => {
     const SpeechRecognition = getSpeechRecognitionClass();
     if (!SpeechRecognition) {
       setError("Sorry, this browser can't listen yet. Please try Chrome or Edge.");
@@ -110,19 +113,19 @@ export function useSpeechRecognition() {
     setError(null);
     recognition.start();
     setIsListening(true);
-  }
+  }, []);
 
-  function stopListening() {
+  const stopListening = useCallback(() => {
     recognitionRef.current?.stop();
-  }
+  }, []);
 
-  function reset() {
+  const reset = useCallback(() => {
     // abort() instead of stop() so leftover words from the old page
     // don't show up after we've cleared the transcript.
     recognitionRef.current?.abort();
     setTranscript("");
     setError(null);
-  }
+  }, []);
 
   return { transcript, isListening, error, startListening, stopListening, reset };
 }
